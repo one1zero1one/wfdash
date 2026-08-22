@@ -50,6 +50,12 @@ const S = {
    * grouping, without the headers: the corpus's repo keys all start with their owner.
    */
   filter: '',
+  /**
+   * `banded` is upstream's sort — actionable first, recency within a band. `updated` is
+   * pure recency, for the "what moved last" read the bands deliberately break. It changes
+   * what freezeOrder computes and nothing else: the freeze/unfreeze rules are untouched.
+   */
+  sort: 'banded',
   /** Levels where the reply did not add up. Reported, never silently trusted. */
   truncated: [],
   heartbeat: null,
@@ -65,7 +71,8 @@ function parseRoute(pathname, search) {
   const selected = t && /^\d+$/.test(t) ? Number(t) : null;
   const m = /^\/m\/([^/]+)\/([^/]+)\/(\d+)\/?$/.exec(pathname);
   if (m) return { kind: 'map', owner: m[1], repo: m[2], number: Number(m[3]), selected };
-  return { kind: 'overview', selected: null, filter: new URLSearchParams(search).get('f') ?? '' };
+  const q = new URLSearchParams(search);
+  return { kind: 'overview', selected: null, filter: q.get('f') ?? '', sort: q.get('s') === 'updated' ? 'updated' : 'banded' };
 }
 
 /**
@@ -445,8 +452,20 @@ function paintOverview() {
  * pressing `back` should leave the page, not replay the narrowings.
  */
 function writeFilter() {
-  const f = S.filter.trim();
-  history.replaceState(null, '', f ? `${location.pathname}?f=${encodeURIComponent(f)}` : location.pathname);
+  const q = new URLSearchParams();
+  if (S.filter.trim()) q.set('f', S.filter.trim());
+  if (S.sort === 'updated') q.set('s', 'updated');
+  const s = q.toString();
+  history.replaceState(null, '', s ? `${location.pathname}?${s}` : location.pathname);
+}
+
+/** The toggle re-freezes on purpose: changing the rule is asking for the reorder. */
+function setSort(v) {
+  S.sort = v;
+  $('sortby').textContent = v === 'updated' ? 'sort: updated' : 'sort: active';
+  writeFilter();
+  freezeOrder();
+  paintOverview();
 }
 
 function setFilter(value) {
@@ -477,7 +496,12 @@ function renderChips() {
 }
 
 function freezeOrder() {
-  S.order = sortMaps(S.maps ?? []).map(mapKey);
+  const maps = S.maps ?? [];
+  const sorted =
+    S.sort === 'updated'
+      ? [...maps].sort((a, b) => String(b.updatedAt ?? '').localeCompare(String(a.updatedAt ?? '')))
+      : sortMaps(maps);
+  S.order = sorted.map(mapKey);
 }
 
 function orderedMaps() {
@@ -507,6 +531,8 @@ function route() {
     // input is synced here rather than trusted, because a `popstate` moves the URL alone.
     S.filter = next.filter ?? '';
     if ($('filter').value !== S.filter) $('filter').value = S.filter;
+    S.sort = next.sort ?? 'banded';
+    $('sortby').textContent = S.sort === 'updated' ? 'sort: updated' : 'sort: active';
   }
 
   if (!sameMap) {
@@ -552,6 +578,8 @@ $('more').addEventListener('click', () => {
 });
 
 $('filter').addEventListener('input', () => setFilter($('filter').value));
+
+$('sortby').addEventListener('click', () => setSort(S.sort === 'updated' ? 'banded' : 'updated'));
 
 $('chips').addEventListener('click', (e) => {
   const chip = e.target.closest('[data-owner]');
@@ -674,6 +702,7 @@ window.WFDASH = () => {
     fit: svg && vb ? +(svg.getBoundingClientRect().width / Number(vb[2])).toFixed(3) : null,
     ringed: [...S.ringed],
     filter: S.filter,
+    sort: S.sort,
     cards: document.querySelectorAll('#overview .card').length,
     truncated: S.truncated,
     ringAt: S.ringAt,
