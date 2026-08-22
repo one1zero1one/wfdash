@@ -8,7 +8,7 @@ import { drawGraph, applyRings, emphasise, highlight } from './graph.js';
 import { renderMapPanel, renderTicketPanel, renderVanishedPanel, rememberScroll, syncRail, wireRail, markNewComments } from './dock.js';
 import { renderOverview, applyCardRings } from './overview.js';
 import { esc } from './lib/markdown.js';
-import { fingerprint, changedNodes, selectionChanged, changedMaps, sortMaps, mapKey, backoffFor, totalTickets } from './lib/change.js';
+import { fingerprint, changedNodes, selectionChanged, changedMaps, sortMaps, mapKey, backoffFor, totalTickets, byRecency } from './lib/change.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -450,8 +450,9 @@ function applyOverview(overview, unchanged) {
  *
  * Each whitespace-separated token must match, as a substring first and as an in-order
  * subsequence second — `wfd` finds `wfdash`, `mrl` finds `meural` — so a few characters
- * from anywhere in the card's line are enough. Substring first keeps the chips exact:
- * `owner/` narrows to that owner and nothing subsequence-shaped sneaks in beside it.
+ * from anywhere in the card's line are enough. A token containing `/` never falls back:
+ * that is the chips' shape, and a chip is a grouping, not a guess — `owner/` must match
+ * that owner's cards and no card whose title happens to hold the letters in order.
  */
 const isSubsequence = (hay, needle) => {
   let i = 0;
@@ -460,31 +461,47 @@ const isSubsequence = (hay, needle) => {
 };
 const matchesFilter = (m, f) => {
   const hay = `${m.repo} #${m.number} ${m.title}`.toLowerCase();
-  return f.split(/\s+/).every((t) => hay.includes(t) || isSubsequence(hay, t));
+  return f.split(/\s+/).every((t) => hay.includes(t) || (!t.includes('/') && isSubsequence(hay, t)));
 };
 
 function paintOverview() {
+  const host = $('overview');
+  // The overview is the scroll container and the repaint replaces its whole innerHTML —
+  // same trade renderGraph makes, same repair: the reader's place survives a keystroke.
+  const keepScroll = host.scrollTop;
   const all = orderedMaps();
   const f = S.filter.trim().toLowerCase();
   const shown = f ? all.filter((m) => matchesFilter(m, f)) : all;
-  renderOverview(shown, $('overview'), {
+  renderOverview(shown, host, {
     ringed: S.ringed,
     deltas: S.deltas,
     total: all.length,
     onOpen: (href) => go(href),
   });
+  host.scrollTop = keepScroll;
 }
 
 /**
  * Like selection, the filter only ever replaces: walking through three filters and
  * pressing `back` should leave the page, not replay the narrowings.
+ *
+ * Overview-only, debounced, and skipped when nothing moved. The route guard is what keeps
+ * a stray write from replacing a map URL's `?t=` selection wholesale; the debounce and the
+ * no-op skip are for Safari, which throttles replaceState (~100 calls per 30s) and throws —
+ * mid-typing, inside the input handler — when a fast typist outruns it.
  */
+let writeFilterTimer = null;
 function writeFilter() {
-  const q = new URLSearchParams();
-  if (S.filter.trim()) q.set('f', S.filter.trim());
-  if (S.sort !== 'banded') q.set('s', S.sort);
-  const s = q.toString();
-  history.replaceState(null, '', s ? `${location.pathname}?${s}` : location.pathname);
+  if (S.route?.kind !== 'overview') return;
+  clearTimeout(writeFilterTimer);
+  writeFilterTimer = setTimeout(() => {
+    const q = new URLSearchParams();
+    if (S.filter.trim()) q.set('f', S.filter.trim());
+    if (S.sort !== 'banded') q.set('s', S.sort);
+    const s = q.toString();
+    const url = s ? `${location.pathname}?${s}` : location.pathname;
+    if (url !== location.pathname + location.search) history.replaceState(null, '', url);
+  }, 300);
 }
 
 /** The toggle re-freezes on purpose: changing the rule is asking for the reorder. */
@@ -525,14 +542,13 @@ function renderChips() {
 
 function freezeOrder() {
   const maps = S.maps ?? [];
-  const byUpdated = (a, b) => String(b.updatedAt ?? '').localeCompare(String(a.updatedAt ?? ''));
   const metric = METRIC[S.sort];
   const sorted =
     S.sort === 'banded'
       ? sortMaps(maps)
       : S.sort === 'updated'
-        ? [...maps].sort(byUpdated)
-        : [...maps].sort((a, b) => metric(b) - metric(a) || byUpdated(a, b));
+        ? [...maps].sort(byRecency)
+        : [...maps].sort((a, b) => metric(b) - metric(a) || byRecency(a, b));
   S.order = sorted.map(mapKey);
 }
 
@@ -636,6 +652,9 @@ document.addEventListener('click', (e) => {
     renderGraph();
     return;
   }
+  // Chrome is not the page: narrowing, sorting or chipping is *hiding* cards, and a click
+  // that hides a ringed card has not seen it. Only clicks on the surface itself clear.
+  if (e.target.closest('#filterbar')) return;
   // A ring is cleared **by a click and by nothing else**. A later change on a different
   // node is not evidence that you saw the earlier one.
   if (S.ringed.size) {

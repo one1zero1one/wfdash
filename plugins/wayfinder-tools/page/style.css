@@ -335,6 +335,9 @@ a { color: #58a6ff; }
 
 /* ============================================================ the overview */
 #filterbar { display: flex; align-items: center; gap: 8px; padding: 12px 18px 0; }
+/* `display: flex` beats the UA's [hidden] rule, so the twin is load-bearing — without it
+   the bar draws on every surface and the route-time hiding in app.js is inert. */
+#filterbar[hidden] { display: none; }
 #filterbar input {
   background: var(--panel);
   border: 1px solid var(--line);

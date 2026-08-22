@@ -117,10 +117,11 @@ export const bandOf = (m) => (isEmpty(m) ? 2 : isDone(m) ? 3 : m.counts.frontier
  * the fixed-width bar. Banded recency puts every card that can be acted on in slots 1–13
  * and stays a rule the reader can state.
  */
+/** The one definition of "newest" — the banded sort's tie-break and the metric sorts' too. */
+export const byRecency = (a, b) => String(b.updatedAt ?? '').localeCompare(String(a.updatedAt ?? ''));
+
 export function sortMaps(maps) {
-  return [...maps].sort(
-    (a, b) => bandOf(a) - bandOf(b) || String(b.updatedAt ?? '').localeCompare(String(a.updatedAt ?? '')),
-  );
+  return [...maps].sort((a, b) => bandOf(a) - bandOf(b) || byRecency(a, b));
 }
 
 // ------------------------------------------------------------------ backoff
