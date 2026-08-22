@@ -44,6 +44,12 @@ const S = {
   cost: null,
   /** Set by focus, consumed by the next overview render: recompute the order once. */
   refreeze: false,
+  /**
+   * The overview's filter, a plain substring over `owner/repo #number title`. Grouping by
+   * repo was measured and rejected (see overview.js) — but `owner/` typed here *is* the
+   * grouping, without the headers: the corpus's repo keys all start with their owner.
+   */
+  filter: '',
   /** Levels where the reply did not add up. Reported, never silently trusted. */
   truncated: [],
   heartbeat: null,
@@ -59,7 +65,7 @@ function parseRoute(pathname, search) {
   const selected = t && /^\d+$/.test(t) ? Number(t) : null;
   const m = /^\/m\/([^/]+)\/([^/]+)\/(\d+)\/?$/.exec(pathname);
   if (m) return { kind: 'map', owner: m[1], repo: m[2], number: Number(m[3]), selected };
-  return { kind: 'overview', selected: null };
+  return { kind: 'overview', selected: null, filter: new URLSearchParams(search).get('f') ?? '' };
 }
 
 /**
@@ -86,6 +92,7 @@ function writeSelection(number) {
 
 function showOnly(id) {
   for (const k of ['overview', 'stage', 'error']) $(k).hidden = k !== id;
+  $('filterbar').hidden = id !== 'overview';
   $('masthead').hidden = id !== 'stage';
   $('banner').classList.toggle('on', id === 'stage' && !!S.graph && isFullyResolved(S.graph));
   $('dock').hidden = id !== 'stage' || !S.dockOpen;
@@ -410,11 +417,63 @@ function applyOverview(overview, unchanged) {
     S.refreeze = false;
   }
   showOnly('overview');
-  renderOverview(orderedMaps(), $('overview'), {
+  renderChips();
+  paintOverview();
+}
+
+/**
+ * Filtering happens at paint, never at fetch: the full corpus is already paid for, so
+ * narrowing it costs zero queries and the filter can change between polls without one.
+ * The frozen order is untouched — hiding cards is not reordering them.
+ */
+const matchesFilter = (m, f) => `${m.repo} #${m.number} ${m.title}`.toLowerCase().includes(f);
+
+function paintOverview() {
+  const all = orderedMaps();
+  const f = S.filter.trim().toLowerCase();
+  const shown = f ? all.filter((m) => matchesFilter(m, f)) : all;
+  renderOverview(shown, $('overview'), {
     ringed: S.ringed,
     deltas: S.deltas,
+    total: all.length,
     onOpen: (href) => go(href),
   });
+}
+
+/**
+ * Like selection, the filter only ever replaces: walking through three filters and
+ * pressing `back` should leave the page, not replay the narrowings.
+ */
+function writeFilter() {
+  const f = S.filter.trim();
+  history.replaceState(null, '', f ? `${location.pathname}?f=${encodeURIComponent(f)}` : location.pathname);
+}
+
+function setFilter(value) {
+  S.filter = value;
+  if ($('filter').value !== value) $('filter').value = value;
+  writeFilter();
+  renderChips();
+  paintOverview();
+}
+
+/**
+ * One chip per owner, drawn only when there are at least two — a single-owner corpus has
+ * nothing to group. A chip is a saved keystroke, not a mode: it writes `owner/` into the
+ * same filter the input holds, and clicking the active one clears it.
+ */
+function renderChips() {
+  const owners = [...new Set((S.maps ?? []).map((m) => m.repo.split('/')[0]))].sort();
+  const f = S.filter.trim().toLowerCase();
+  $('chips').innerHTML =
+    owners.length < 2
+      ? ''
+      : owners
+          .map((o) => {
+            const on = f === `${o.toLowerCase()}/`;
+            return `<button class="chip${on ? ' on' : ''}" data-owner="${esc(o)}">${esc(o)}</button>`;
+          })
+          .join('');
 }
 
 function freezeOrder() {
@@ -443,6 +502,12 @@ function route() {
 
   S.route = next;
   S.selected = next.selected;
+  if (next.kind === 'overview') {
+    // The filter arrives with the URL — a bookmarked `/?f=casa` opens narrowed — and the
+    // input is synced here rather than trusted, because a `popstate` moves the URL alone.
+    S.filter = next.filter ?? '';
+    if ($('filter').value !== S.filter) $('filter').value = S.filter;
+  }
 
   if (!sameMap) {
     // Nothing about one map's state carries to another. The ring is per-surface too: a
@@ -486,6 +551,15 @@ $('more').addEventListener('click', () => {
   $('more').textContent = clamped ? 'more' : 'less';
 });
 
+$('filter').addEventListener('input', () => setFilter($('filter').value));
+
+$('chips').addEventListener('click', (e) => {
+  const chip = e.target.closest('[data-owner]');
+  if (!chip) return;
+  const want = `${chip.dataset.owner}/`;
+  setFilter(S.filter.trim().toLowerCase() === want.toLowerCase() ? '' : want);
+});
+
 $('scroller').addEventListener('scroll', () => {
   rememberScroll($('scroller'), S.selected == null ? 'map' : 'ticket');
 });
@@ -514,7 +588,15 @@ document.addEventListener('click', (e) => {
 // keyboard exit on the two maps with no ticket to deselect.
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
+  // The filter gets its own rung below the ladder: `esc` in the box clears it and hands
+  // focus back to the page, so narrowing is always one key from undone.
+  if (e.target === $('filter')) {
+    setFilter('');
+    $('filter').blur();
+    return;
+  }
   if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
+  if (S.route.kind === 'overview' && S.filter) return setFilter('');
   if (S.route.kind !== 'map') return;
   if (S.selected != null) return select(null);
   // One ladder, exactly three rungs: selection, then map, then the overview. Re-opening a
@@ -556,7 +638,7 @@ function wake(why) {
 function applyOverviewOrder() {
   freezeOrder();
   S.refreeze = false;
-  renderOverview(orderedMaps(), $('overview'), { ringed: S.ringed, deltas: S.deltas, onOpen: (href) => go(href) });
+  paintOverview();
 }
 
 document.addEventListener('visibilitychange', () => {
@@ -591,6 +673,8 @@ window.WFDASH = () => {
     lanes: document.querySelectorAll('#stage .lane-head').length,
     fit: svg && vb ? +(svg.getBoundingClientRect().width / Number(vb[2])).toFixed(3) : null,
     ringed: [...S.ringed],
+    filter: S.filter,
+    cards: document.querySelectorAll('#overview .card').length,
     truncated: S.truncated,
     ringAt: S.ringAt,
     order: S.order,

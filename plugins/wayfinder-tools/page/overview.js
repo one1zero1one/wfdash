@@ -129,9 +129,16 @@ function countsHTML(m, delta) {
  * by repo is rejected — 12 headers for 20 maps, 10 governing a single card, costing 8
  * cards below the fold and 2.2× the height, to serve the one repo that has the problem.
  */
-export function renderOverview(maps, host, { ringed = new Set(), deltas = new Map(), onOpen } = {}) {
+export function renderOverview(maps, host, { ringed = new Set(), deltas = new Map(), total = maps.length, onOpen } = {}) {
   if (!maps.length) {
-    host.innerHTML = `<h1>No wayfinder maps found</h1>
+    // Two different empties, never collapsed: a corpus with no maps at all, and a filter
+    // that matched none of the maps the corpus does have. The second names the count it
+    // hid, because "nothing here" over hidden work is the silent-truncation bug in a hat.
+    host.innerHTML =
+      total > 0
+        ? `<h1>0 of ${total} maps</h1>
+      <p class="sub">The filter matches nothing — <code>esc</code> clears it.</p>`
+        : `<h1>No wayfinder maps found</h1>
       <p class="sub">Nothing is labelled <code>wayfinder:map</code> where this account can see it.
       Empty is not an error — <code>gh search</code> returns no results and exits 0, so this
       looks exactly like success, because it is.</p>`;
@@ -149,8 +156,11 @@ export function renderOverview(maps, host, { ringed = new Set(), deltas = new Ma
     },
     { hitl: 0, afk: 0, unknown: 0 },
   );
+  // A narrowed heading says both numbers: `4 of 15 maps` keeps the hidden work countable,
+  // and the fleet line below it recounts over what is shown — a filtered view quoting the
+  // whole fleet's `takeable` would put a number on the page that no visible bar supports.
   host.innerHTML =
-    `<h1>${maps.length} map${maps.length === 1 ? '' : 's'}</h1>
+    `<h1>${maps.length < total ? `${maps.length} of ${total} maps` : `${maps.length} map${maps.length === 1 ? '' : 's'}`}</h1>
      <p class="sub">${takeable} takeable · ${fleet.hitl} hitl · ${fleet.afk} afk${
        fleet.unknown ? ` · ${fleet.unknown} unmarked` : ''
      }</p>

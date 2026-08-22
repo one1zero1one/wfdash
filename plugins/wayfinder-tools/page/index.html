@@ -28,6 +28,13 @@
   <div id="banner"></div>
   <div id="body">
     <div id="col">
+      <!-- Static, outside the overview host: renderOverview rewrites its host's innerHTML on
+           every changed poll, and an input inside it would lose focus and half-typed text on
+           a 120-second timer. -->
+      <div id="filterbar" hidden>
+        <input id="filter" type="search" placeholder="filter — owner/, repo, title" spellcheck="false" autocomplete="off">
+        <span id="chips"></span>
+      </div>
       <div id="overview" hidden></div>
       <div id="stage" hidden></div>
       <div id="error" hidden></div>
