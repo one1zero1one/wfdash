@@ -8,7 +8,7 @@ import { drawGraph, applyRings, emphasise, highlight } from './graph.js';
 import { renderMapPanel, renderTicketPanel, renderVanishedPanel, rememberScroll, syncRail, wireRail, markNewComments } from './dock.js';
 import { renderOverview, applyCardRings } from './overview.js';
 import { esc } from './lib/markdown.js';
-import { fingerprint, changedNodes, selectionChanged, changedMaps, sortMaps, mapKey, backoffFor } from './lib/change.js';
+import { fingerprint, changedNodes, selectionChanged, changedMaps, sortMaps, mapKey, backoffFor, totalTickets } from './lib/change.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -52,8 +52,10 @@ const S = {
   filter: '',
   /**
    * `banded` is upstream's sort — actionable first, recency within a band. `updated` is
-   * pure recency, for the "what moved last" read the bands deliberately break. It changes
-   * what freezeOrder computes and nothing else: the freeze/unfreeze rules are untouched.
+   * pure recency, for the "what moved last" read the bands deliberately break. `tasks`,
+   * `afk` and `hitl` sort by the card's own numbers, largest first, recency as the
+   * tie-break. It changes what freezeOrder computes and nothing else: the
+   * freeze/unfreeze rules are untouched.
    */
   sort: 'banded',
   /** Levels where the reply did not add up. Reported, never silently trusted. */
@@ -62,6 +64,18 @@ const S = {
 };
 
 const clock = () => new Date().toTimeString().slice(0, 8);
+
+// The sort cycle, in click order. `banded` is the default and stays out of the URL; the
+// button's label says `active` for it because that is what the band rule reads as.
+const SORTS = ['banded', 'updated', 'tasks', 'afk', 'hitl'];
+const sortLabel = (v) => `sort: ${v === 'banded' ? 'active' : v}`;
+// The three metric sorts, largest first. Attendance can be absent in theory (see
+// overview.js `attendanceOf`); `?? 0` keeps the comparator total rather than NaN-poisoned.
+const METRIC = {
+  tasks: (m) => totalTickets(m),
+  afk: (m) => m.attendance?.afk ?? 0,
+  hitl: (m) => m.attendance?.hitl ?? 0,
+};
 
 // ------------------------------------------------------------------ the route
 
@@ -72,7 +86,8 @@ function parseRoute(pathname, search) {
   const m = /^\/m\/([^/]+)\/([^/]+)\/(\d+)\/?$/.exec(pathname);
   if (m) return { kind: 'map', owner: m[1], repo: m[2], number: Number(m[3]), selected };
   const q = new URLSearchParams(search);
-  return { kind: 'overview', selected: null, filter: q.get('f') ?? '', sort: q.get('s') === 'updated' ? 'updated' : 'banded' };
+  const s = q.get('s');
+  return { kind: 'overview', selected: null, filter: q.get('f') ?? '', sort: SORTS.includes(s) ? s : 'banded' };
 }
 
 /**
@@ -432,8 +447,21 @@ function applyOverview(overview, unchanged) {
  * Filtering happens at paint, never at fetch: the full corpus is already paid for, so
  * narrowing it costs zero queries and the filter can change between polls without one.
  * The frozen order is untouched — hiding cards is not reordering them.
+ *
+ * Each whitespace-separated token must match, as a substring first and as an in-order
+ * subsequence second — `wfd` finds `wfdash`, `mrl` finds `meural` — so a few characters
+ * from anywhere in the card's line are enough. Substring first keeps the chips exact:
+ * `owner/` narrows to that owner and nothing subsequence-shaped sneaks in beside it.
  */
-const matchesFilter = (m, f) => `${m.repo} #${m.number} ${m.title}`.toLowerCase().includes(f);
+const isSubsequence = (hay, needle) => {
+  let i = 0;
+  for (const ch of hay) if (ch === needle[i] && ++i === needle.length) return true;
+  return needle.length === 0;
+};
+const matchesFilter = (m, f) => {
+  const hay = `${m.repo} #${m.number} ${m.title}`.toLowerCase();
+  return f.split(/\s+/).every((t) => hay.includes(t) || isSubsequence(hay, t));
+};
 
 function paintOverview() {
   const all = orderedMaps();
@@ -454,7 +482,7 @@ function paintOverview() {
 function writeFilter() {
   const q = new URLSearchParams();
   if (S.filter.trim()) q.set('f', S.filter.trim());
-  if (S.sort === 'updated') q.set('s', 'updated');
+  if (S.sort !== 'banded') q.set('s', S.sort);
   const s = q.toString();
   history.replaceState(null, '', s ? `${location.pathname}?${s}` : location.pathname);
 }
@@ -462,7 +490,7 @@ function writeFilter() {
 /** The toggle re-freezes on purpose: changing the rule is asking for the reorder. */
 function setSort(v) {
   S.sort = v;
-  $('sortby').textContent = v === 'updated' ? 'sort: updated' : 'sort: active';
+  $('sortby').textContent = sortLabel(v);
   writeFilter();
   freezeOrder();
   paintOverview();
@@ -497,10 +525,14 @@ function renderChips() {
 
 function freezeOrder() {
   const maps = S.maps ?? [];
+  const byUpdated = (a, b) => String(b.updatedAt ?? '').localeCompare(String(a.updatedAt ?? ''));
+  const metric = METRIC[S.sort];
   const sorted =
-    S.sort === 'updated'
-      ? [...maps].sort((a, b) => String(b.updatedAt ?? '').localeCompare(String(a.updatedAt ?? '')))
-      : sortMaps(maps);
+    S.sort === 'banded'
+      ? sortMaps(maps)
+      : S.sort === 'updated'
+        ? [...maps].sort(byUpdated)
+        : [...maps].sort((a, b) => metric(b) - metric(a) || byUpdated(a, b));
   S.order = sorted.map(mapKey);
 }
 
@@ -526,13 +558,17 @@ function route() {
 
   S.route = next;
   S.selected = next.selected;
+  // The filterbar belongs to the overview alone, and it hides *here*, at route time —
+  // showOnly() also hides it, but that only runs after the map's first poll returns, and
+  // the fetch-long flash of chips over a loading map was a reported bug.
+  $('filterbar').hidden = next.kind !== 'overview';
   if (next.kind === 'overview') {
     // The filter arrives with the URL — a bookmarked `/?f=casa` opens narrowed — and the
     // input is synced here rather than trusted, because a `popstate` moves the URL alone.
     S.filter = next.filter ?? '';
     if ($('filter').value !== S.filter) $('filter').value = S.filter;
     S.sort = next.sort ?? 'banded';
-    $('sortby').textContent = S.sort === 'updated' ? 'sort: updated' : 'sort: active';
+    $('sortby').textContent = sortLabel(S.sort);
   }
 
   if (!sameMap) {
@@ -579,7 +615,7 @@ $('more').addEventListener('click', () => {
 
 $('filter').addEventListener('input', () => setFilter($('filter').value));
 
-$('sortby').addEventListener('click', () => setSort(S.sort === 'updated' ? 'banded' : 'updated'));
+$('sortby').addEventListener('click', () => setSort(SORTS[(SORTS.indexOf(S.sort) + 1) % SORTS.length]));
 
 $('chips').addEventListener('click', (e) => {
   const chip = e.target.closest('[data-owner]');
