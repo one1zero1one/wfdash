@@ -142,6 +142,12 @@ fills once, the same way the dashboard itself fills it:
     curl -s "localhost:7777/api/maps?owner=owner" | jq
     # every map for one owner, across all of their repos
 
+`/m/owner/repo/N?v=simple` opens a map in the simple view — a plain checklist a
+non-technical reader needs no explanation for. The link carries the mode, so it can be sent
+as-is. The rows show ticket titles; a ticket whose body carries a line starting with
+`plain:` shows that line's text instead. The line is optional everywhere and written by
+whoever charts the ticket — the dashboard never generates text.
+
 ## Finding your maps
 
 The overview searches GitHub for open issues labelled `wayfinder:map` owned by whoever `gh`

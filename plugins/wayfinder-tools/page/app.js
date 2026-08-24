@@ -240,10 +240,13 @@ function renderSimple(graph, stage) {
     }
   }
 
-  // The row's own text — one place to extend later. If titles ever prove too terse, this
-  // is where a ticket's optional `plain:` body line would be read (falling back to the
-  // title when absent), per the ticket's documented-but-not-built extension point.
-  const rowTitle = (n) => esc(n.title);
+  // The row's own text: a ticket body's optional `plain:` line wins, the title is the
+  // fallback forever. The line is written at charting time, by a human or a session that
+  // has the tone skills — never generated here. Absent means absent; nothing nags for it.
+  const rowTitle = (n) => {
+    const plain = /^plain:[ \t]*(\S.*)$/im.exec(n.body ?? '');
+    return esc(plain ? plain[1].trim() : n.title);
+  };
 
   const row = (n, box, note) =>
     `<li class="node simplerow" data-n="${n.number}"><span class="box">${box}</span>
@@ -270,7 +273,7 @@ function renderSimple(graph, stage) {
     section(
       'waiting',
       'waiting',
-      waiting.map(({ node, blockers }) => row(node, '☐', ` <span class="note">— waiting on: ${blockers.map((b) => esc(b.title)).join(', ')}</span>`)),
+      waiting.map(({ node, blockers }) => row(node, '☐', ` <span class="note">— waiting on: ${blockers.map((b) => rowTitle(b)).join(', ')}</span>`)),
     ),
   );
   html.push(section('done', 'done', done.map((n) => row(n, '☑'))));
