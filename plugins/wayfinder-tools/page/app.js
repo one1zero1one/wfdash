@@ -84,7 +84,10 @@ function parseRoute(pathname, search) {
   const t = new URLSearchParams(search).get('t');
   const selected = t && /^\d+$/.test(t) ? Number(t) : null;
   const m = /^\/m\/([^/]+)\/([^/]+)\/(\d+)\/?$/.exec(pathname);
-  if (m) return { kind: 'map', owner: m[1], repo: m[2], number: Number(m[3]), selected };
+  if (m) {
+    const v = new URLSearchParams(search).get('v') === 'simple' ? 'simple' : 'full';
+    return { kind: 'map', owner: m[1], repo: m[2], number: Number(m[3]), selected, view: v };
+  }
   const q = new URLSearchParams(search);
   const s = q.get('s');
   return { kind: 'overview', selected: null, filter: q.get('f') ?? '', sort: SORTS.includes(s) ? s : 'banded' };
@@ -104,10 +107,27 @@ function go(url, { push = true } = {}) {
   route();
 }
 
-/** Selection only ever replaces, so walking the graph never fills the back stack. */
+/**
+ * Selection only ever replaces, so walking the graph never fills the back stack. Built off
+ * the current query rather than a fresh one, so `?v=simple` survives a selection change —
+ * this is the one place both query keys meet, and dropping one silently would exit simple
+ * mode on the next click.
+ */
 function writeSelection(number) {
-  const url = number == null ? location.pathname : `${location.pathname}?t=${number}`;
-  history.replaceState(null, '', url);
+  const q = new URLSearchParams(location.search);
+  if (number == null) q.delete('t');
+  else q.set('t', number);
+  const s = q.toString();
+  history.replaceState(null, '', s ? `${location.pathname}?${s}` : location.pathname);
+}
+
+/** The view toggle, same shape as writeSelection: replaces, keeps `?t=` intact. */
+function writeView(view) {
+  const q = new URLSearchParams(location.search);
+  if (view === 'simple') q.set('v', 'simple');
+  else q.delete('v');
+  const s = q.toString();
+  history.replaceState(null, '', s ? `${location.pathname}?${s}` : location.pathname);
 }
 
 // ------------------------------------------------------------------ rendering
@@ -176,10 +196,86 @@ function renderGraph() {
     // Two of twenty-one maps have no tickets at all. The page is still the map's body
     // rather than a blank canvas — the dock is already showing it.
     stage.innerHTML = `<p id="empty">This map has no tickets yet. Its body is in the panel.</p>`;
+  } else if (S.route.view === 'simple') {
+    renderSimple(S.graph, stage);
+    applyRings(stage, S.ringed);
+    stage.querySelectorAll('.node').forEach((n) => n.classList.toggle('sel', n.dataset.n === String(S.selected)));
   } else {
     drawGraph(S.graph, stage, { selected: S.selected, ringed: S.ringed, onSelect: select });
   }
   stage.scrollTop = keepScroll;
+}
+
+/**
+ * The simple checklist — a non-technical reading of the same graph the SVG draws. Derived
+ * only: title, status and edges are already on the wire, nothing is fetched or invented.
+ *
+ * Rows carry the graph's own `.node` / `data-n` marks so the existing ring and selection
+ * machinery (`applyRings`, `select`'s `.sel` toggle) works on them unchanged — the click
+ * listener is wired once, below, under `wiring`.
+ */
+function renderSimple(graph, stage) {
+  const byNumber = new Map(graph.nodes.map((n) => [n.number, n]));
+  const todo = [];
+  const inProgress = [];
+  const waiting = [];
+  const done = [];
+  for (const n of graph.nodes) {
+    if (n.status === 'out-of-scope') continue;
+    if (n.status === 'resolved') {
+      done.push(n);
+    } else if (n.status === 'claimed') {
+      inProgress.push(n);
+    } else if (n.status === 'blocked' || n.status === 'undermined') {
+      // Only an *unresolved* blocker really blocks. A blocker that finished since the edge
+      // was drawn is not a reason to keep this row in "waiting" — it belongs in "to do".
+      const blockers = graph.edges
+        .filter((e) => e.blocked === n.number)
+        .map((e) => byNumber.get(e.blocker))
+        .filter((b) => b && b.status !== 'resolved' && b.status !== 'out-of-scope');
+      if (blockers.length) waiting.push({ node: n, blockers });
+      else todo.push(n);
+    } else {
+      todo.push(n);
+    }
+  }
+
+  // The row's own text — one place to extend later. If titles ever prove too terse, this
+  // is where a ticket's optional `plain:` body line would be read (falling back to the
+  // title when absent), per the ticket's documented-but-not-built extension point.
+  const rowTitle = (n) => esc(n.title);
+
+  const row = (n, box, note) =>
+    `<li class="node simplerow" data-n="${n.number}"><span class="box">${box}</span>
+      <span class="row-title">${rowTitle(n)}</span>${note ?? ''}</li>`;
+
+  const section = (label, cls, items) =>
+    items.length
+      ? `<section class="simple-group ${cls}"><h2>${esc(label)}</h2><ul>${items.join('')}</ul></section>`
+      : '';
+
+  const html = [];
+  html.push(`<div id="simple">`);
+  if (graph.map.destination) {
+    html.push(
+      `<div class="simple-dest">${graph.map.destination
+        .split(/\n{2,}/)
+        .map((p) => `<p>${esc(p.replace(/\n/g, ' ')).trim()}</p>`)
+        .join('')}</div>`,
+    );
+  }
+  html.push(section('to do', 'todo', todo.map((n) => row(n, '☐'))));
+  html.push(section('in progress', 'progress', inProgress.map((n) => row(n, '☐', ' <span class="note">in progress</span>'))));
+  html.push(
+    section(
+      'waiting',
+      'waiting',
+      waiting.map(({ node, blockers }) => row(node, '☐', ` <span class="note">— waiting on: ${blockers.map((b) => esc(b.title)).join(', ')}</span>`)),
+    ),
+  );
+  html.push(section('done', 'done', done.map((n) => row(n, '☑'))));
+  html.push(`</div>`);
+  stage.innerHTML = html.join('');
 }
 
 function hoverNode(num) {
@@ -209,6 +305,19 @@ function select(number) {
   renderDock();
   // The graph pays for the dock, so it re-fits to the width that is left.
   if (reopened) renderGraph();
+}
+
+/** The button names the mode a click switches *to* — the `#more`/`less` pattern, not `#sortby`'s. */
+function renderViewToggle() {
+  $('viewtoggle').textContent = S.route.view === 'simple' ? 'full' : 'simple';
+}
+
+/** Flips the map between the SVG graph and the plain checklist. Never touches poll or fetch. */
+function toggleView() {
+  S.route.view = S.route.view === 'simple' ? 'full' : 'simple';
+  writeView(S.route.view);
+  renderViewToggle();
+  if (S.graph) renderGraph();
 }
 
 function renderError(err) {
@@ -604,6 +713,8 @@ function route() {
     if ($('filter').value !== S.filter) $('filter').value = S.filter;
     S.sort = next.sort ?? 'banded';
     $('sortby').textContent = sortLabel(S.sort);
+  } else {
+    renderViewToggle();
   }
 
   if (!sameMap) {
@@ -651,6 +762,15 @@ $('more').addEventListener('click', () => {
 $('filter').addEventListener('input', () => setFilter($('filter').value));
 
 $('sortby').addEventListener('click', () => setSort(SORTS[(SORTS.indexOf(S.sort) + 1) % SORTS.length]));
+
+$('viewtoggle').addEventListener('click', toggleView);
+
+// Delegated, and scoped to `.simplerow` alone: the SVG's `.node`s wire their own click
+// inside drawGraph, and only one of the two renderers is ever in `#stage` at a time.
+$('stage').addEventListener('click', (e) => {
+  const row = e.target.closest('.simplerow');
+  if (row) select(Number(row.dataset.n));
+});
 
 $('chips').addEventListener('click', (e) => {
   const repoChip = e.target.closest('[data-repo]');
