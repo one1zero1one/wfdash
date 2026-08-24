@@ -257,16 +257,10 @@ function renderSimple(graph, stage) {
       ? `<section class="simple-group ${cls}"><h2>${esc(label)}</h2><ul>${items.join('')}</ul></section>`
       : '';
 
+  // No destination block here: the masthead above the stage already shows it, and the
+  // checklist repeating it read as a bug. The list opens straight on the work.
   const html = [];
   html.push(`<div id="simple">`);
-  if (graph.map.destination) {
-    html.push(
-      `<div class="simple-dest">${graph.map.destination
-        .split(/\n{2,}/)
-        .map((p) => `<p>${esc(p.replace(/\n/g, ' ')).trim()}</p>`)
-        .join('')}</div>`,
-    );
-  }
   html.push(section('to do', 'todo', todo.map((n) => row(n, '☐'))));
   html.push(section('in progress', 'progress', inProgress.map((n) => row(n, '☐', ' <span class="note">in progress</span>'))));
   html.push(

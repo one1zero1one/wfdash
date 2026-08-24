@@ -141,9 +141,6 @@ a { color: #58a6ff; }
 /* ============================================================ the simple checklist
    The plain-English twin of the graph above: same stage, same dark palette, no SVG. */
 #simple { max-width: 640px; margin: 0 auto; padding: 24px 18px 40px; text-align: left; }
-.simple-dest { color: #c9d1d9; font-size: 13px; line-height: 20px; margin-bottom: 22px; }
-.simple-dest p { margin: 0 0 6px; }
-.simple-dest p:last-child { margin-bottom: 0; }
 .simple-group { margin-bottom: 20px; }
 .simple-group h2 { margin: 0 0 8px; font-size: 12px; font-weight: 600; color: var(--dim); text-transform: uppercase; letter-spacing: 0.04em; }
 .simple-group ul { list-style: none; margin: 0; padding: 0; }
