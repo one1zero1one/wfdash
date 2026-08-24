@@ -8,6 +8,25 @@ while you're away.
 
 ![the map, before and after the human work is done](docs/demo.gif)
 
+## Why this fork
+
+This is my fork of [mingrath/wfdash](https://github.com/mingrath/wfdash). I run the
+dashboard as a shared web page, not as a local tool. It sits in a container behind a
+Google login, and people who are not me open it. Upstream 0.1.5 is the base and stays
+intact underneath. Shared use needed four things it did not have:
+
+- **Find one map fast.** A filter box with fuzzy match, owner chips, and repo chips.
+  Twenty maps across eleven repos is too many to scan by eye.
+- **Sort by what matters now.** Five sorts: active, updated, tasks, afk, hitl.
+- **Script it.** `/api/repos` and `/api/maps` answer as JSON from the cache the overview
+  already fills. One shell line lists the maps of the repo you stand in.
+- **Show a map to a non-technical reader.** `?v=simple` draws a map as a plain checklist.
+  Done work is struck through. Waiting work names its blocker.
+
+The fork derives every new field from data upstream already fetches. No new dependencies,
+no build step, no LLM in the page. I want these changes to land upstream. Until they do,
+the branch `overview-filter-group` is what I deploy.
+
 ## Install
 
 **Which agent are you running?**

@@ -8,6 +8,16 @@ while you're away.
 
 ![the map, before and after the human work is done](https://raw.githubusercontent.com/mingrath/wfdash/main/docs/demo.gif)
 
+## Why this fork
+
+This package is built from my fork of [mingrath/wfdash](https://github.com/mingrath/wfdash).
+I run the dashboard as a shared web page behind a Google login, and shared use needed four
+things upstream 0.1.5 did not have: a filter with fuzzy match and owner/repo chips, five
+sorts (active, updated, tasks, afk, hitl), a JSON API (`/api/repos`, `/api/maps`) answered
+from the existing cache, and a `?v=simple` checklist view for non-technical readers. The
+fork derives every new field from data upstream already fetches. I want these changes to
+land upstream. The section "Scripting and deep links" below documents the additions.
+
 ## Install
 
 **Which agent are you running?**
