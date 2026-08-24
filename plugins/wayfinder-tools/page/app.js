@@ -529,7 +529,7 @@ function setFilter(value) {
 function renderChips() {
   const owners = [...new Set((S.maps ?? []).map((m) => m.repo.split('/')[0]))].sort();
   const f = S.filter.trim().toLowerCase();
-  $('chips').innerHTML =
+  const ownerChips =
     owners.length < 2
       ? ''
       : owners
@@ -538,6 +538,25 @@ function renderChips() {
             return `<button class="chip${on ? ' on' : ''}" data-owner="${esc(o)}">${esc(o)}</button>`;
           })
           .join('');
+
+  // Drill-in: an owner chip active (`f` is exactly `owner/`) draws one chip per repo of that
+  // owner, narrowing to `owner/name`. `owner/name` also substring-matches `owner/name-longer`
+  // in matchesFilter below — accepted here, same as the owner chips, because the chip always
+  // writes the full repo string and a collision is a same-owner naming coincidence, not
+  // something this drill-in introduces.
+  const activeOwner = owners.find((o) => f === `${o.toLowerCase()}/`);
+  const repos = activeOwner ? [...new Set((S.maps ?? []).filter((m) => m.repo.split('/')[0] === activeOwner).map((m) => m.repo))].sort() : [];
+  const repoChips =
+    repos.length < 2
+      ? ''
+      : repos
+          .map((r) => {
+            const on = f === r.toLowerCase();
+            return `<button class="chip${on ? ' on' : ''}" data-repo="${esc(r)}">${esc(r.slice(activeOwner.length + 1))}</button>`;
+          })
+          .join('');
+
+  $('chips').innerHTML = ownerChips + repoChips;
 }
 
 function freezeOrder() {
@@ -634,6 +653,13 @@ $('filter').addEventListener('input', () => setFilter($('filter').value));
 $('sortby').addEventListener('click', () => setSort(SORTS[(SORTS.indexOf(S.sort) + 1) % SORTS.length]));
 
 $('chips').addEventListener('click', (e) => {
+  const repoChip = e.target.closest('[data-repo]');
+  if (repoChip) {
+    const want = repoChip.dataset.repo;
+    // The active repo chip drops back one level, to the owner chip's `owner/` — not to ''.
+    setFilter(S.filter.trim().toLowerCase() === want.toLowerCase() ? `${want.split('/')[0]}/` : want);
+    return;
+  }
   const chip = e.target.closest('[data-owner]');
   if (!chip) return;
   const want = `${chip.dataset.owner}/`;

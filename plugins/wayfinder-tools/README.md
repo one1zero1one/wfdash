@@ -125,6 +125,23 @@ If wfdash does not appear in your agent, check its own skills list first — an 
 fails to start looks identical, from the outside, to a skill that failed to load. If the path
 in this table is wrong or has moved, that is a bug report worth filing.
 
+## Scripting and deep links
+
+`/?f=owner/repo` opens the overview narrowed to one repo — the same filter the owner and
+repo chips write into the URL. Bookmark it, or build it in a script.
+
+The overview's cached corpus also answers as JSON, at zero extra GitHub cost — a cold cache
+fills once, the same way the dashboard itself fills it:
+
+    curl -s "localhost:7777/api/repos" | jq
+    # { "repos": [{ "repo": "owner/name", "maps": 3 }, ...], "cache": "hit", "ageS": 41, ... }
+
+    curl -s "localhost:7777/api/maps?repo=$(gh repo view --json nameWithOwner -q .nameWithOwner)" | jq
+    # every map in the current repo, with its number, title, counts, attendance and updatedAt
+
+    curl -s "localhost:7777/api/maps?owner=owner" | jq
+    # every map for one owner, across all of their repos
+
 ## Finding your maps
 
 The overview searches GitHub for open issues labelled `wayfinder:map` owned by whoever `gh`

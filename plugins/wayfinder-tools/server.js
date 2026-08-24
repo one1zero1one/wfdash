@@ -183,6 +183,30 @@ export async function createWfdashServer({ port = DEFAULT_PORT, ttlMs = OVERVIEW
         return sendJSON(res, 200, await cachedOverview());
       }
 
+      if (p === '/api/repos') {
+        await ensureAuth();
+        const overview = await cachedOverview();
+        const counts = new Map();
+        for (const m of overview.maps) counts.set(m.repo, (counts.get(m.repo) ?? 0) + 1);
+        const repos = [...counts.entries()].map(([repo, maps]) => ({ repo, maps })).sort((a, b) => a.repo.localeCompare(b.repo));
+        return sendJSON(res, 200, { repos, cache: overview.cache, ageS: overview.ageS, rateLimit: overview.rateLimit });
+      }
+
+      if (p === '/api/maps') {
+        await ensureAuth();
+        const overview = await cachedOverview();
+        const repo = url.searchParams.get('repo');
+        const owner = url.searchParams.get('owner');
+        // `repo` wins over `owner` when both are given — it is the narrower filter, so
+        // there is nothing to gain from intersecting the two.
+        const maps = repo
+          ? overview.maps.filter((m) => m.repo === repo)
+          : owner
+            ? overview.maps.filter((m) => m.repo.split('/')[0] === owner)
+            : overview.maps;
+        return sendJSON(res, 200, { maps, cache: overview.cache, ageS: overview.ageS, rateLimit: overview.rateLimit });
+      }
+
       if (p === '/api/graph') {
         await ensureAuth();
         const repo = url.searchParams.get('repo') ?? '';
