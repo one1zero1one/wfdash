@@ -5,6 +5,7 @@
 // read-only — there is no write endpoint to call even if this file wanted one.
 
 import { drawGraph, applyRings, emphasise, highlight } from './graph.js';
+import { renderStars } from './stars.js';
 import { renderMapPanel, renderTicketPanel, renderVanishedPanel, rememberScroll, syncRail, wireRail, markNewComments } from './dock.js';
 import { renderOverview, applyCardRings } from './overview.js';
 import { esc } from './lib/markdown.js';
@@ -85,7 +86,8 @@ function parseRoute(pathname, search) {
   const selected = t && /^\d+$/.test(t) ? Number(t) : null;
   const m = /^\/m\/([^/]+)\/([^/]+)\/(\d+)\/?$/.exec(pathname);
   if (m) {
-    const v = new URLSearchParams(search).get('v') === 'simple' ? 'simple' : 'full';
+    const vq = new URLSearchParams(search).get('v');
+    const v = vq === 'simple' || vq === 'stars' ? vq : 'full';
     return { kind: 'map', owner: m[1], repo: m[2], number: Number(m[3]), selected, view: v };
   }
   const q = new URLSearchParams(search);
@@ -124,7 +126,7 @@ function writeSelection(number) {
 /** The view toggle, same shape as writeSelection: replaces, keeps `?t=` intact. */
 function writeView(view) {
   const q = new URLSearchParams(location.search);
-  if (view === 'simple') q.set('v', 'simple');
+  if (view === 'simple' || view === 'stars') q.set('v', view);
   else q.delete('v');
   const s = q.toString();
   history.replaceState(null, '', s ? `${location.pathname}?${s}` : location.pathname);
@@ -200,6 +202,9 @@ function renderGraph() {
     renderSimple(S.graph, stage);
     applyRings(stage, S.ringed);
     stage.querySelectorAll('.node').forEach((n) => n.classList.toggle('sel', n.dataset.n === String(S.selected)));
+  } else if (S.route.view === 'stars') {
+    renderStars(S.graph, stage, { selected: S.selected, ringed: S.ringed, onSelect: select });
+    applyRings(stage, S.ringed);
   } else {
     drawGraph(S.graph, stage, { selected: S.selected, ringed: S.ringed, onSelect: select });
   }
@@ -305,13 +310,15 @@ function select(number) {
 }
 
 /** The button names the mode a click switches *to* — the `#more`/`less` pattern, not `#sortby`'s. */
+const NEXT_VIEW = { full: 'simple', simple: 'stars', stars: 'full' };
+
 function renderViewToggle() {
-  $('viewtoggle').textContent = S.route.view === 'simple' ? 'full' : 'simple';
+  $('viewtoggle').textContent = NEXT_VIEW[S.route.view] ?? 'simple';
 }
 
-/** Flips the map between the SVG graph and the plain checklist. Never touches poll or fetch. */
+/** Cycles the map through the SVG graph, the plain checklist and the star-map. Never touches poll or fetch. */
 function toggleView() {
-  S.route.view = S.route.view === 'simple' ? 'full' : 'simple';
+  S.route.view = NEXT_VIEW[S.route.view] ?? 'full';
   writeView(S.route.view);
   renderViewToggle();
   if (S.graph) renderGraph();
