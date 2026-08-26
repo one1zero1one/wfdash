@@ -55,7 +55,7 @@ const sendError = (res, e) => {
   sendJSON(res, 200, { error: err });
 };
 
-export async function createWfdashServer({ port = DEFAULT_PORT, ttlMs = OVERVIEW_TTL_MS, idleMs = IDLE_MS, spawn = false } = {}) {
+export async function createWfdashServer({ port = DEFAULT_PORT, ttlMs = OVERVIEW_TTL_MS, idleMs = IDLE_MS, spawn = false, host = '127.0.0.1' } = {}) {
   // wfdash#4: the one exception to "zero write endpoints", and only on a host
   // instance an operator started with WFDASH_SPAWN=1. The deployed container
   // never sets it, so its two routes below do not exist there.
@@ -284,7 +284,7 @@ export async function createWfdashServer({ port = DEFAULT_PORT, ttlMs = OVERVIEW
           }
           reject(e);
         });
-        server.listen(port, '127.0.0.1', () => {
+        server.listen(port, host, () => {
           touch();
           resolve(server.address().port);
         });
@@ -309,8 +309,15 @@ if (isMain) {
   const argPort = process.argv.indexOf('--port');
   const port = Number(argPort > 0 ? process.argv[argPort + 1] : process.env.WFDASH_PORT || DEFAULT_PORT);
   // WFDASH_SPAWN is a hard on/off, not a knob: unset (the deployed container's
-  // state) means the spawn routes do not exist at all.
-  const wfdash = await createWfdashServer({ port, spawn: process.env.WFDASH_SPAWN === '1' });
+  // state) means the spawn routes do not exist at all. WFDASH_BIND widens the
+  // listen address past loopback; on a spawn instance that hands command
+  // execution to everyone who can reach the port, so the operator sets it
+  // per launch, eyes open, and the default stays 127.0.0.1.
+  const wfdash = await createWfdashServer({
+    port,
+    spawn: process.env.WFDASH_SPAWN === '1',
+    host: process.env.WFDASH_BIND || '127.0.0.1',
+  });
   try {
     const bound = await wfdash.listen();
     process.stdout.write(`wfdash server  pid ${process.pid}  http://127.0.0.1:${bound}/\n`);
