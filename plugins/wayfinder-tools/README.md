@@ -10,7 +10,9 @@ while you're away.
 
 ## Why this fork
 
-This package is built from my fork of [mingrath/wfdash](https://github.com/mingrath/wfdash).
+The lovely work here is not mine. [Mingrath Mekavichai](https://github.com/mingrath) made
+wfdash, and [Matt Pocock](https://github.com/mattpocock) made the wayfinder method that
+gives it maps to draw. This fork adds some custom features I needed on top of their work.
 I run the dashboard as a shared web page behind a Google login, and shared use needed four
 things upstream 0.1.5 did not have: a filter with fuzzy match and owner/repo chips, five
 sorts (active, updated, tasks, afk, hitl), a JSON API (`/api/repos`, `/api/maps`) answered

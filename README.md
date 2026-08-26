@@ -10,8 +10,11 @@ while you're away.
 
 ## Why this fork
 
-This is my fork of [mingrath/wfdash](https://github.com/mingrath/wfdash). I run the
-dashboard as a shared web page, not as a local tool. It sits in a container behind a
+The lovely work here is not mine. [Mingrath Mekavichai](https://github.com/mingrath) made
+wfdash, and [Matt Pocock](https://github.com/mattpocock) made the wayfinder method that
+gives it maps to draw. This fork adds some custom features I needed on top of their work.
+
+I run the dashboard as a shared web page, not as a local tool. It sits in a container behind a
 Google login, and people who are not me open it. Upstream 0.1.5 is the base and stays
 intact underneath. Shared use needed four things it did not have:
 

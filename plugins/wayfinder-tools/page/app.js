@@ -341,7 +341,22 @@ function renderStatus() {
     const where = S.truncated.map((t) => `${t.where} ${t.have}/${t.total}`).join(', ');
     bits.push(`<span class="stale" title="${esc(where)}">truncated · ${esc(where.slice(0, 60))}</span>`);
   }
-  if (S.ringed.size) bits.push(`<span class="chg">${S.ringed.size} changed · ${S.ringAt}</span>`);
+  if (S.ringed.size) {
+    // Rings are counted over the whole corpus but painted over the filtered subset, so a
+    // narrowed view can hold changes no visible card wears. The count says so, or it is
+    // the silent-truncation bug in a status bar.
+    let hidden = 0;
+    const f = S.filter.trim().toLowerCase();
+    if (S.route?.kind === 'overview' && f && S.maps) {
+      const byKey = new Map(S.maps.map((m) => [mapKey(m), m]));
+      for (const k of S.ringed) {
+        const m = byKey.get(k);
+        if (m && !matchesFilter(m, f)) hidden++;
+      }
+    }
+    const note = hidden ? ` (${hidden} hidden by the filter)` : '';
+    bits.push(`<span class="chg">${S.ringed.size} changed${note} · ${S.ringAt}</span>`);
+  }
   if (p.stale) {
     bits.push(`<span class="stale">stale · last good ${p.lastGoodAt} · ${esc(p.err?.kind ?? '')}</span>`);
     if (p.err?.hint) bits.push(`<span class="err">${esc(p.err.hint)}</span>`);
