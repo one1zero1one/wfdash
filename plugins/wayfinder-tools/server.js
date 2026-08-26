@@ -320,7 +320,7 @@ if (isMain) {
   });
   try {
     const bound = await wfdash.listen();
-    process.stdout.write(`wfdash server  pid ${process.pid}  http://127.0.0.1:${bound}/\n`);
+    process.stdout.write(`wfdash server  pid ${process.pid}  http://${process.env.WFDASH_BIND || '127.0.0.1'}:${bound}/\n`);
   } catch (e) {
     process.stderr.write(`wfdash: ${e.message}\n`);
     process.exit(1);
