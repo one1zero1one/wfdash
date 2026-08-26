@@ -16,7 +16,7 @@ gives it maps to draw. This fork adds some custom features I needed on top of th
 
 I run the dashboard as a shared web page, not as a local tool. It sits in a container behind a
 Google login, and people who are not me open it. Upstream 0.1.5 is the base and stays
-intact underneath. Shared use needed four things it did not have:
+intact underneath. Shared use needed five things it did not have:
 
 - **Find one map fast.** A filter box with fuzzy match, owner chips, and repo chips.
   Twenty maps across eleven repos is too many to scan by eye.
@@ -25,10 +25,18 @@ intact underneath. Shared use needed four things it did not have:
   already fills. One shell line lists the maps of the repo you stand in.
 - **Show a map to a non-technical reader.** `?v=simple` draws a map as a plain checklist.
   Done work is struck through. Waiting work names its blocker.
+- **Start an agent from a ticket.** On a host instance started with `WFDASH_SPAWN=1`, the
+  ticket panel grows a start-agent button. One press starts a one-shot Claude Code session
+  in that repo's checkout, with the map, the ticket, and its blocker answers as the brief.
+  The agent posts its result as an issue comment and stops; the thread is the conversation.
+  The deployed container never sets the flag, so the shared page stays read-only. See
+  [docs/spawn-from-wfdash.md](docs/spawn-from-wfdash.md).
 
-The fork derives every new field from data upstream already fetches. No new dependencies,
-no build step, no LLM in the page. I want these changes to land upstream. Until they do,
-the branch `overview-filter-group` is what I deploy.
+The filter, sorts, API, and simple view derive every new field from data upstream already
+fetches — no new dependencies, no build step, no LLM in the page, and I want them to land
+upstream. The spawn feature is different: it is machine-specific by design (it shells out
+to the `claude` CLI on my server) and is a fork feature, not an upstream candidate. The
+branch `overview-filter-group` is what I deploy.
 
 ## Install
 
@@ -118,8 +126,13 @@ Both pages poll, so claiming a ticket in your terminal shows up without a reload
 - Nothing here forks, copies, patches, or replaces the `/wayfinder` skill itself.
 - It shells out to `gh` from the server, so it inherits your existing auth and no token
   ever reaches the browser.
-- It serves on `127.0.0.1:7777` and nowhere else. `WFDASH_PORT` moves it. It holds no auth,
-  so reaching it from another machine is your port-forward to arrange, not a feature here.
+- It serves on `127.0.0.1:7777` and nowhere else by default. `WFDASH_PORT` moves the port
+  and `WFDASH_BIND` widens the address. It holds no auth, so reaching it from another
+  machine is your port-forward to arrange, not a feature here.
+- The zero-write rule has one gated exception: a host instance started with
+  `WFDASH_SPAWN=1` can start agents. CAUTION: do not set `WFDASH_BIND` on a spawn
+  instance unless everyone on that network may run agents on your machine. See
+  [docs/spawn-from-wfdash.md](docs/spawn-from-wfdash.md).
 - It reaps itself after 30 idle minutes.
 
 ## Which agents this works in

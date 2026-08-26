@@ -114,7 +114,7 @@ export function renderMapPanel(graph, scroller, { onSelect, onHover } = {}) {
  * layouts would be six things to keep consistent for a difference the data already
  * expresses.
  */
-export function renderTicketPanel(graph, node, scroller, { onSelect, onHover, newComments = 0, onLoadNew } = {}) {
+export function renderTicketPanel(graph, node, scroller, { onSelect, onHover, newComments = 0, onLoadNew, onSpawn, agents } = {}) {
   const link = ticketLinker(graph);
   const rel = (dir) =>
     (graph.edges ?? [])
@@ -144,6 +144,18 @@ export function renderTicketPanel(graph, node, scroller, { onSelect, onHover, ne
       <a href="${esc(node.url)}" target="_blank" rel="noreferrer noopener">#${node.number} ↗</a>
       <button class="close" data-close title="close the dock">×</button>
     </div></div><div class="pb">`;
+
+  // wfdash#4: the spawn row exists only when the server said spawn is on (the
+  // host instance). The chip mirrors the one wf:-named session for this ticket;
+  // app.js updates it in place on the agents poll, never by re-render.
+  if (onSpawn) {
+    const agent = (agents ?? []).find((a) => a.name === `wf:${graph.repo}#${node.number}`);
+    html += `<p class="lbl">Agent</p><div class="spawn">
+      <span class="pill" data-agent-chip style="color:${agent?.state === 'working' ? '#d29922' : '#8b949e'}">${esc(agent?.state ?? 'none')}</span>
+      <input data-spawn-comment type="text" placeholder="optional instruction for this run" />
+      <button class="spawnbtn" data-spawn>start agent</button>
+    </div>`;
+  }
 
   // With the dock open the deepest map renders at 38%, where a blocker's title is ~4.4px.
   // The drawing carries the topology; the panel carries the names.
@@ -193,7 +205,7 @@ export function renderTicketPanel(graph, node, scroller, { onSelect, onHover, ne
   }
 
   scroller.innerHTML = html + '</div>';
-  wire(scroller, graph, { onSelect, onHover, onLoadNew });
+  wire(scroller, graph, { onSelect, onHover, onLoadNew, onSpawn });
   setStop(scroller);
   if (lastTicket !== node.number) {
     scrollMemory.set('ticket', 0);
@@ -292,7 +304,13 @@ export function wireRail(dock, scroller) {
   scroller.addEventListener('scroll', () => syncRail(dock, scroller), { passive: true });
 }
 
-function wire(scroller, graph, { onSelect, onHover, onLoadNew } = {}) {
+function wire(scroller, graph, { onSelect, onHover, onLoadNew, onSpawn } = {}) {
+  const spawnBtn = scroller.querySelector('[data-spawn]');
+  spawnBtn?.addEventListener('click', () => {
+    spawnBtn.disabled = true;
+    spawnBtn.textContent = 'starting…';
+    onSpawn?.(scroller.querySelector('[data-spawn-comment]')?.value ?? '');
+  });
   scroller.querySelectorAll('[data-goto]').forEach((e) => {
     e.addEventListener('click', (ev) => {
       ev.preventDefault();

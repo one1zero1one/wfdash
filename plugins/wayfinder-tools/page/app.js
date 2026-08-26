@@ -61,6 +61,11 @@ const S = {
   /** Levels where the reply did not add up. Reported, never silently trusted. */
   truncated: [],
   heartbeat: null,
+  /** wfdash#4: true when /api/health says the host instance has spawn on. */
+  spawnOn: false,
+  /** The wf:-named sessions from /api/agents, refreshed on their own 15s timer. */
+  agents: [],
+  agentTimer: null,
 };
 
 const clock = () => new Date().toTimeString().slice(0, 8);
@@ -179,6 +184,8 @@ function renderDock() {
   renderTicketPanel(S.graph, node, scroller, {
     onSelect: select,
     onHover: hoverNode,
+    agents: S.agents,
+    onSpawn: S.spawnOn ? (comment) => spawnAgent(node.number, comment) : undefined,
     newComments: S.pendingComments,
     onLoadNew: () => {
       S.pendingComments = 0;
@@ -317,6 +324,91 @@ function toggleView() {
   if (S.graph) renderGraph();
 }
 
+// ------------------------------------------------------------------ agents (wfdash#4)
+
+/**
+ * One probe at boot: /api/health says whether this instance has spawn on. Only a
+ * host instance started with WFDASH_SPAWN=1 does; the deployed container says
+ * false and none of this runs — the page stays exactly the read-only dashboard.
+ */
+async function probeSpawn() {
+  try {
+    const h = await fetchJSON('/api/health');
+    S.spawnOn = !!h.spawn;
+  } catch {
+    S.spawnOn = false;
+  }
+  if (!S.spawnOn) return;
+  await pollAgents();
+  S.agentTimer = setInterval(pollAgents, 15_000);
+}
+
+/**
+ * The agents poll is local (a `claude agents --json` subprocess, no GitHub
+ * cost). It updates the status-bar count and the selected ticket's chip in
+ * place — never by re-rendering the panel, which would eat the reader's scroll
+ * and selection, the same contract markNewComments keeps.
+ */
+async function pollAgents() {
+  try {
+    const r = await fetchJSON('/api/agents');
+    S.agents = r.agents ?? [];
+  } catch {
+    S.agents = [];
+  }
+  renderStatus();
+  if (S.route?.kind === 'map' && S.selected != null && S.graph) {
+    const agent = S.agents.find((a) => a.name === `wf:${S.graph.repo}#${S.selected}`);
+    const chip = $('scroller').querySelector('[data-agent-chip]');
+    if (chip) {
+      chip.textContent = agent?.state ?? 'none';
+      chip.style.color = agent?.state === 'working' ? '#d29922' : '#8b949e';
+    }
+  }
+}
+
+/** POST the spawn, then poll immediately so the chip moves within a second. */
+async function spawnAgent(ticket, comment) {
+  try {
+    const r = await fetchJSON2('/api/spawn', {
+      repo: `${S.route.owner}/${S.route.repo}`,
+      map: S.route.number,
+      ticket,
+      comment: comment || undefined,
+    });
+    void r;
+  } catch (err) {
+    const btn = $('scroller').querySelector('[data-spawn]');
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = 'start agent';
+    }
+    const chip = $('scroller').querySelector('[data-agent-chip]');
+    if (chip) chip.textContent = `failed: ${err?.kind ?? 'error'}`;
+    return;
+  }
+  await pollAgents();
+  const btn = $('scroller').querySelector('[data-spawn]');
+  if (btn) {
+    btn.disabled = false;
+    btn.textContent = 'start agent';
+  }
+}
+
+/** The one POST the page makes, and only against a spawn-enabled host instance. */
+async function fetchJSON2(url, body) {
+  let res;
+  try {
+    res = await fetch(url, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' }, cache: 'no-store' });
+  } catch (e) {
+    throw { kind: 'server-dead', message: String(e?.message ?? e), hint: 'server not running — /wfdash' };
+  }
+  const payload = await res.json().catch(() => null);
+  if (!payload) throw { kind: 'gh-failed', message: `unreadable reply from ${url}`, hint: 'check the server log' };
+  if (payload.error) throw payload.error;
+  return payload;
+}
+
 function renderError(err) {
   showOnly('error');
   $('error').innerHTML = `<h2>${esc(err.kind)}</h2><p>${esc(err.message ?? '')}</p>
@@ -340,6 +432,10 @@ function renderStatus() {
   if (S.truncated.length) {
     const where = S.truncated.map((t) => `${t.where} ${t.have}/${t.total}`).join(', ');
     bits.push(`<span class="stale" title="${esc(where)}">truncated · ${esc(where.slice(0, 60))}</span>`);
+  }
+  if (S.spawnOn) {
+    const working = S.agents.filter((a) => a.state === 'working').length;
+    bits.push(`<span>${working} working · ${S.agents.length} agent${S.agents.length === 1 ? '' : 's'}</span>`);
   }
   if (S.ringed.size) {
     // Rings are counted over the whole corpus but painted over the filtered subset, so a
@@ -897,6 +993,7 @@ addEventListener('focus', () => wake('focus'));
 
 setInterval(renderStatus, 1000);
 route();
+probeSpawn();
 
 // What a browser-driven test reads instead of guessing at internals. It reports only what
 // the page has actually rendered or measured, so an assertion here is an assertion about

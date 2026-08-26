@@ -477,3 +477,17 @@ a { color: #58a6ff; }
 #error h2 { margin: 0 0 8px; font-size: 15px; color: var(--undermined); }
 #error .hint { color: var(--dim); margin-top: 10px; }
 #error code { background: #21262d; border-radius: 4px; padding: 1px 5px; }
+
+/* wfdash#4: the spawn row in the ticket panel, host instances only. */
+.spawn { display: flex; gap: 8px; align-items: center; margin: 4px 0 12px; }
+.spawn input {
+  flex: 1; min-width: 0; background: var(--panel); color: inherit;
+  border: 1px solid #30363d; border-radius: 6px; padding: 5px 8px; font: inherit; font-size: 12px;
+}
+.spawn input::placeholder { color: var(--dim); }
+.spawnbtn {
+  background: var(--panel); color: inherit; border: 1px solid #30363d; border-radius: 6px;
+  padding: 5px 10px; font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap;
+}
+.spawnbtn:hover:not(:disabled) { border-color: var(--dim); }
+.spawnbtn:disabled { color: var(--dim); cursor: default; }

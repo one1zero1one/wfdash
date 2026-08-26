@@ -16,6 +16,7 @@ import { join, extname, normalize, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readGraph, readOverview, checkAuth, ReaderError } from './reader.js';
 import { occupantOf, takenMessage } from './port.js';
+import { createSpawner } from './spawn.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PAGE_DIR = join(HERE, 'page');
@@ -54,7 +55,11 @@ const sendError = (res, e) => {
   sendJSON(res, 200, { error: err });
 };
 
-export async function createWfdashServer({ port = DEFAULT_PORT, ttlMs = OVERVIEW_TTL_MS, idleMs = IDLE_MS } = {}) {
+export async function createWfdashServer({ port = DEFAULT_PORT, ttlMs = OVERVIEW_TTL_MS, idleMs = IDLE_MS, spawn = false, host = '127.0.0.1' } = {}) {
+  // wfdash#4: the one exception to "zero write endpoints", and only on a host
+  // instance an operator started with WFDASH_SPAWN=1. The deployed container
+  // never sets it, so its two routes below do not exist there.
+  const spawner = spawn ? createSpawner(spawn === true ? {} : spawn) : null;
   const startedAt = new Date().toISOString();
   const serverMtime = await stat(join(HERE, 'server.js'))
     .then((s) => s.mtimeMs)
@@ -175,7 +180,36 @@ export async function createWfdashServer({ port = DEFAULT_PORT, ttlMs = OVERVIEW
           polls: state.polls,
           sessionCost: state.sessionCost,
           lastPoll: state.lastPoll,
+          spawn: !!spawner,
         });
+      }
+
+      if (spawner && p === "/api/agents") {
+        return sendJSON(res, 200, { agents: await spawner.listAgents() });
+      }
+
+      if (spawner && p === "/api/spawn" && req.method === "POST") {
+        let raw = "";
+        for await (const chunk of req) raw += chunk;
+        let body;
+        try {
+          body = JSON.parse(raw || "{}");
+        } catch {
+          return sendError(res, new ReaderError("not-found", "unreadable spawn body", "body is JSON: {repo, map, ticket, comment?}"));
+        }
+        const [owner, name] = String(body.repo ?? "").split("/");
+        const map = Number(body.map);
+        const ticket = Number(body.ticket);
+        if (!owner || !name || !map || !ticket) {
+          return sendError(res, new ReaderError("not-found", `bad spawn target ${JSON.stringify(body.repo)}#${body.map}/${body.ticket}`, "body is JSON: {repo, map, ticket, comment?}"));
+        }
+        await ensureAuth();
+        const graph = await readGraph({ owner, repo: name, number: map });
+        const node = graph.nodes.find((n) => n.number === ticket);
+        if (!node) {
+          return sendError(res, new ReaderError("not-found", `#${ticket} is not a ticket on ${body.repo}#${map}`, "reload the map"));
+        }
+        return sendJSON(res, 200, { spawned: await spawner.spawn({ graph, node, comment: body.comment }) });
       }
 
       if (p === '/api/overview') {
@@ -250,7 +284,7 @@ export async function createWfdashServer({ port = DEFAULT_PORT, ttlMs = OVERVIEW
           }
           reject(e);
         });
-        server.listen(port, '127.0.0.1', () => {
+        server.listen(port, host, () => {
           touch();
           resolve(server.address().port);
         });
@@ -274,10 +308,19 @@ const isMain = process.argv[1] && import.meta.url === new URL(`file://${process.
 if (isMain) {
   const argPort = process.argv.indexOf('--port');
   const port = Number(argPort > 0 ? process.argv[argPort + 1] : process.env.WFDASH_PORT || DEFAULT_PORT);
-  const wfdash = await createWfdashServer({ port });
+  // WFDASH_SPAWN is a hard on/off, not a knob: unset (the deployed container's
+  // state) means the spawn routes do not exist at all. WFDASH_BIND widens the
+  // listen address past loopback; on a spawn instance that hands command
+  // execution to everyone who can reach the port, so the operator sets it
+  // per launch, eyes open, and the default stays 127.0.0.1.
+  const wfdash = await createWfdashServer({
+    port,
+    spawn: process.env.WFDASH_SPAWN === '1',
+    host: process.env.WFDASH_BIND || '127.0.0.1',
+  });
   try {
     const bound = await wfdash.listen();
-    process.stdout.write(`wfdash server  pid ${process.pid}  http://127.0.0.1:${bound}/\n`);
+    process.stdout.write(`wfdash server  pid ${process.pid}  http://${process.env.WFDASH_BIND || '127.0.0.1'}:${bound}/\n`);
   } catch (e) {
     process.stderr.write(`wfdash: ${e.message}\n`);
     process.exit(1);
