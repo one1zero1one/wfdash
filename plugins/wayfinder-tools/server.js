@@ -199,6 +199,18 @@ export async function createWfdashServer({ port = DEFAULT_PORT, ttlMs = OVERVIEW
       }
 
       if (spawnURL && p === "/api/spawn" && req.method === "POST") {
+        // Who may *execute*, not who may look. WFDASH_SPAWN_ALLOW is a comma list of
+        // logins, matched against the email the auth proxy asserts in x-forwarded-email.
+        // Unset means ungated — a local instance has no auth proxy and no header to check.
+        // Viewing stays allowlist-wide; running agents on the host is a narrower grant.
+        const allow = (process.env.WFDASH_SPAWN_ALLOW ?? '')
+          .split(',')
+          .map((s) => s.trim().toLowerCase())
+          .filter(Boolean);
+        const who = String(req.headers['x-forwarded-email'] ?? '').toLowerCase();
+        if (allow.length && !allow.includes(who)) {
+          return sendError(res, new ReaderError('not-found', `spawn is not enabled for ${who || 'this login'}`, 'the operator sets WFDASH_SPAWN_ALLOW'));
+        }
         let raw = "";
         for await (const chunk of req) raw += chunk;
         const r = await fetch(`${spawnURL}/api/spawn`, { method: 'POST', body: raw, headers: { 'content-type': 'application/json' } }).catch(() => null);
