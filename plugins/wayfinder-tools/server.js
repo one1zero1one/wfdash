@@ -60,6 +60,7 @@ export async function createWfdashServer({ port = DEFAULT_PORT, ttlMs = OVERVIEW
   // instance an operator started with WFDASH_SPAWN=1. The deployed container
   // never sets it, so its two routes below do not exist there.
   const spawner = spawn ? createSpawner(spawn === true ? {} : spawn) : null;
+  const spawnURL = process.env.WFDASH_SPAWN_URL || null;
   const startedAt = new Date().toISOString();
   const serverMtime = await stat(join(HERE, 'server.js'))
     .then((s) => s.mtimeMs)
@@ -180,12 +181,29 @@ export async function createWfdashServer({ port = DEFAULT_PORT, ttlMs = OVERVIEW
           polls: state.polls,
           sessionCost: state.sessionCost,
           lastPoll: state.lastPoll,
-          spawn: !!spawner,
+          spawn: !!spawner || !!spawnURL,
         });
       }
 
       if (spawner && p === "/api/agents") {
         return sendJSON(res, 200, { agents: await spawner.listAgents() });
+      }
+
+      // Proxy mode (wfdash#4, phase 2): the container cannot run `claude`, so a
+      // deployment sets WFDASH_SPAWN_URL to a host instance and these two routes
+      // forward to it verbatim. Everything else stays local and read-only.
+      if (spawnURL && p === "/api/agents") {
+        const r = await fetch(`${spawnURL}/api/agents`).catch(() => null);
+        if (!r) return sendError(res, new ReaderError('gh-failed', 'spawn host unreachable', 'is the wfdash-spawn service up on the host?'));
+        return sendJSON(res, 200, await r.json());
+      }
+
+      if (spawnURL && p === "/api/spawn" && req.method === "POST") {
+        let raw = "";
+        for await (const chunk of req) raw += chunk;
+        const r = await fetch(`${spawnURL}/api/spawn`, { method: 'POST', body: raw, headers: { 'content-type': 'application/json' } }).catch(() => null);
+        if (!r) return sendError(res, new ReaderError('gh-failed', 'spawn host unreachable', 'is the wfdash-spawn service up on the host?'));
+        return sendJSON(res, 200, await r.json());
       }
 
       if (spawner && p === "/api/spawn" && req.method === "POST") {
