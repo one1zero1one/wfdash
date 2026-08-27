@@ -29,15 +29,20 @@ WFDASH_SPAWN=1 WFDASH_PORT=7812 node server.js
 - `WFDASH_BIND=<lan-ip>` widens the listen address past loopback.
 
 CAUTION: A spawn instance executes commands for everyone who can reach its
-port, and it has no auth. Keep it on loopback, or bind it to a network where
-that is acceptable to you. Never expose the raw port on a public route.
+port, and it has no auth. Keep it on loopback, or bind it to a host-internal
+address. On this deployment it binds `172.18.0.1`, the compose bridge
+gateway: containers reach it, the LAN cannot. Never bind `0.0.0.0`, and
+never expose the raw port on a public route.
 
 The deployed container does not set `WFDASH_SPAWN` and runs no agents itself.
 Instead it proxies the spawn routes to the host service named by
 `WFDASH_SPAWN_URL` (on this deployment: `http://host.docker.internal:7812`).
 The public page sits behind oauth2-proxy with a Google login and an email
-allowlist. Every allowed account can reach the spawn routes and can start
-agents. Add an address to that allowlist only for a person you trust with
+allowlist. Who may *execute* is its own explicit list: `WFDASH_SPAWN_ALLOW`
+on the container, a comma list of emails matched against the login the proxy
+asserts. Today it holds every allowed account — Dani's decision, recorded on
+one1zero1one/wfdash#4 — so viewing and spawning coincide. Narrowing later is
+an env edit. Add an address to either list only for a person you trust with
 command execution on the host.
 
 ## Operate
