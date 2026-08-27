@@ -30,10 +30,13 @@ WFDASH_SPAWN=1 WFDASH_PORT=7812 node server.js
 
 CAUTION: A spawn instance executes commands for everyone who can reach its
 port, and it has no auth. Keep it on loopback, or bind it to a network where
-that is acceptable to you. Never put a spawn instance behind a public route.
+that is acceptable to you. Never expose the raw port on a public route.
 
-The deployed container never sets `WFDASH_SPAWN`, so the shared page keeps
-upstream's zero-write rule.
+The deployed container does not set `WFDASH_SPAWN` and runs no agents itself.
+Instead it proxies the spawn routes to the host service named by
+`WFDASH_SPAWN_URL` (on this deployment: `http://host.docker.internal:7812`).
+The public page sits behind oauth2-proxy with a Google login and a
+one-address allowlist, so only that account can reach the spawn routes.
 
 ## Operate
 
