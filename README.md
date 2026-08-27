@@ -31,7 +31,8 @@ intact underneath. Shared use needed five things it did not have:
   The agent posts its result as an issue comment and stops; the thread is the conversation.
   The deployed container does not run agents itself: it proxies spawn requests to the
   host service (`WFDASH_SPAWN_URL`), and the public page sits behind a Google login with
-  a one-address allowlist. See [docs/spawn-from-wfdash.md](docs/spawn-from-wfdash.md).
+  an email allowlist. Every allowed account can spawn — a deliberate decision, not a side
+  effect. See [docs/spawn-from-wfdash.md](docs/spawn-from-wfdash.md).
 
 The filter, sorts, API, and simple view derive every new field from data upstream already
 fetches — no new dependencies, no build step, no LLM in the page, and I want them to land
