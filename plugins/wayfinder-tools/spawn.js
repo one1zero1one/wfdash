@@ -25,11 +25,13 @@ export const NAME_PREFIX = 'wf:';
 
 /**
  * Repo → working folder. One rule plus one alias (decided on wfdash#4): every
- * repo lives at /media/storage1/projects/<name>, except hassio-config, whose
- * checkout is the Home Assistant config tree itself.
+ * repo lives at <root>/<name>, except hassio-config, whose checkout is the
+ * Home Assistant config tree itself. The root defaults to the home server's
+ * projects folder; WFDASH_PROJECTS_ROOT points a second host (the shop Mac
+ * mini keeps its checkouts under ~/repo) at its own tree.
  */
 const FOLDER_ALIAS = { 'hassio-config': '/homeassistant' };
-const PROJECTS_ROOT = '/media/storage1/projects';
+const PROJECTS_ROOT = process.env.WFDASH_PROJECTS_ROOT || '/media/storage1/projects';
 
 export function resolveFolder(repoName) {
   return FOLDER_ALIAS[repoName] ?? join(PROJECTS_ROOT, repoName);

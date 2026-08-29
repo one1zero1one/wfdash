@@ -27,6 +27,8 @@ WFDASH_SPAWN=1 WFDASH_PORT=7812 node server.js
 - `WFDASH_SPAWN=1` turns the feature on. Without it, the two routes below do
   not exist and the page stays the read-only dashboard.
 - `WFDASH_BIND=<lan-ip>` widens the listen address past loopback.
+- `WFDASH_PROJECTS_ROOT=<dir>` is where the checkouts live. Default is
+  `/media/storage1/projects`. The shop Mac mini sets `/Users/flormini/repo`.
 
 CAUTION: A spawn instance executes commands for everyone who can reach its
 port, and it has no auth. Keep it on loopback, or bind it to a host-internal
