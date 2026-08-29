@@ -144,10 +144,12 @@ export function createSpawner({ claudeBin = 'claude' } = {}) {
 
       const name = `${NAME_PREFIX}${graph.repo}#${node.number}`;
       const prompt = `Read ${payloadPath} and do what it says. It is your complete brief.`;
-      // Unattended one-shot. Decided and approved by the operator on wfdash#4
+      // Unattended one-shot in auto mode: the permission classifier decides, no
+      // human prompt, no bypass disclaimer. Decided by Dani 2026-08-29 (flor-hq#89).
+      // Earlier on wfdash#4
       // (decisions comment): a permission prompt nobody will ever see is a
       // hang, not a safeguard.
-      const args = ['--bg', prompt, '-n', name, '--dangerously-skip-permissions'];
+      const args = ['--bg', prompt, '-n', name, '--permission-mode', 'auto'];
       const { stdout } = await execFile(claudeBin, args, { cwd: folder, timeout: 30_000 });
       const id = /backgrounded[^a-z0-9]*([a-z0-9]{8})/i.exec(stdout)?.[1] ?? null;
       return { id, name, folder, payloadPath };
